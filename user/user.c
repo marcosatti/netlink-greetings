@@ -10,6 +10,41 @@
 
 #define NETLINK_TEST_PROTOCOL 31
 
+void* main_recv(void *_sock_fd) {
+        int sock_fd = (int)_sock_fd;
+        int msg_length = NLMSG_HDRLEN + 256;
+
+        struct nlmsghdr *nlh_recv = (struct nlmsghdr *)calloc(1,msg_length);
+
+        printf("Recv thread started ok\n");
+
+        while (1) {
+                memset(nlh_recv, 0, msg_length);
+
+                struct iovec iov;
+                memset(&iov, 0, sizeof(iov));
+                iov.iov_base = (void *) nlh_recv;
+                iov.iov_len = msg_length;
+
+                struct msghdr outermsghdr;
+                memset(&outermsghdr, 0, sizeof(outermsghdr));
+                outermsghdr.msg_iov = &iov;
+                outermsghdr.msg_iovlen = 1;
+                outermsghdr.msg_name = NULL;
+                outermsghdr.msg_namelen = 0;
+
+                int recv_ret = recvmsg(sock_fd, &outermsghdr, 0);
+                if (recv_ret < 0) {
+                        printf("Error receiving message\n");
+                        exit(EXIT_FAILURE);
+                }
+
+                char *message = NLMSG_DATA(nlh_recv);
+                printf("Read %d bytes", recv_ret);
+                printf("Message: %s", message);
+        }
+}
+
 static int send_netlink_msg_to_kernel(int sock_fd, char *msg, uint32_t msg_size, int nlmsg_type, uint16_t flags) {
         struct sockaddr_nl dest_addr;
         memset(&dest_addr, 0, sizeof(dest_addr));
@@ -57,6 +92,13 @@ int main(char *argv[], int argc) {
                 return EXIT_FAILURE;
         }
 
+        pthread_attr_t thread_attr;
+        pthread_attr_init(&thread_attr);
+        pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
+
+        pthread_t thread_id;
+        pthread_create(&thread_id, &thread_attr, main_recv, (void *)sock_fd);
+
         int count = 0;
 
         while (1) {
@@ -75,8 +117,7 @@ int main(char *argv[], int argc) {
                         count++;
                         
                         uint16_t flags = NLM_F_ACK;
-                        flags = 0;
-                        
+
                         int send_ret = send_netlink_msg_to_kernel(sock_fd, message, message_size, 1, flags);
                         if (send_ret < 0) {
                                 printf("Failed to send message\n");
