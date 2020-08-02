@@ -40,8 +40,8 @@ void* main_recv(void *_sock_fd) {
                 }
 
                 char *message = NLMSG_DATA(nlh_recv);
-                printf("Read %d bytes", recv_ret);
-                printf("Message: %s", message);
+                printf("Read %d bytes\n", recv_ret);
+                printf("Message: %s\n", message);
         }
 }
 

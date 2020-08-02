@@ -1,6 +1,7 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/netlink.h>
+#include <linux/types.h>
 #include <net/sock.h>
 #include <linux/string.h>
 
@@ -21,6 +22,9 @@ static void nlmsg_dump(struct nlmsghdr *nlh) {
                 nlh->nlmsg_flags,
                 nlh->nlmsg_seq,
                 nlh->nlmsg_pid);
+
+        char *us_data = nlmsg_data(nlh);
+        printk(KERN_INFO "Netlink message = %s\n", us_data);
 }
 
 static int __init netlink_greetings_init(void) {
@@ -44,39 +48,36 @@ static void __exit netlink_greetings_exit(void) {
 }
 
 static void netlink_recv_msg_fn(struct sk_buff *skb_in) {
-        struct nlmsghdr *nlh_recv, *nlh_reply;
-        __u32 pid;
-        char *us_data;
-        char reply[256];
-        struct sk_buff *skb_out;
-        int us_data_len, reply_result;
-
         printk(KERN_INFO "%s() invoked\n", __FUNCTION__);
 
-        nlh_recv = nlmsg_hdr(skb_in);
+        struct nlmsghdr *nlh_recv = nlmsg_hdr(skb_in);
 
         nlmsg_dump(nlh_recv);
 
-        pid = nlh_recv->nlmsg_pid;
-        us_data = nlmsg_data(nlh_recv);
-        us_data_len = nlmsg_len(nlh_recv);
-
-        printk(KERN_INFO "Netlink message from port %u: len = %u, message = %s\n", pid, us_data_len, us_data);
-
         if (nlh_recv->nlmsg_flags & NLM_F_ACK) {
+                printk(KERN_INFO "Netlink message received requesting acknowledgement\n");
+
+                u32 pid = nlh_recv->nlmsg_pid;
+
+                char reply[256];
                 memset(reply, 0, sizeof(reply));
-                snprintf(reply, sizeof(reply), "Msg from port %u acknowledged\n", pid);
 
-                skb_out = nlmsg_new(sizeof(reply), 0);
-                nlh_reply = nlmsg_put(skb_out, 0, nlh_recv->nlmsg_seq, NLMSG_DONE, sizeof(reply), 0);
-                strncpy(nlmsg_data(nlh_reply), reply, sizeof(reply));
+                snprintf(reply, sizeof(reply), "Netlink message from port %u acknowledged", pid);
 
-                reply_result = nlmsg_unicast(nl_sock, skb_out, pid);
+                struct sk_buff *skb_out = nlmsg_new(sizeof(reply), 0);
+                struct nlmsghdr *nlh_reply = nlmsg_put(skb_out, 0, nlh_recv->nlmsg_seq, NLMSG_DONE, sizeof(reply), 0);
+
+                char *payload = nlmsg_data(nlh_reply);
+                strncpy(payload, reply, sizeof(reply));
+
+                int reply_result = nlmsg_unicast(nl_sock, skb_out, pid);
                 if (reply_result < 0) {
                         printk(KERN_ERR "Error sending data back to user space\n");
                 }
-        
-                kfree_skb(skb_out);
+
+                /* Do not free nlmsg - nlmsg_unicast does so automatically. */ 
+
+                printk(KERN_INFO "Netlink message acknowledgement done\n");
         }
 }
 
